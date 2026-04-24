@@ -1,0 +1,76 @@
+name: 🌙 Nightly - Appmax → Conta Azul
+
+on:
+  schedule:
+    - cron: '0 2 * * *'   # 02:00 UTC = 23:00 Brasília
+  workflow_dispatch:        # permite rodar manualmente a qualquer hora
+
+jobs:
+  lancar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependências
+        run: pip install -r requirements.txt
+
+      - name: Restaurar tokens.json
+        run: echo '${{ secrets.CONTA_AZUL_TOKENS }}' > tokens.json
+
+      - name: Executar lançamentos
+        env:
+          SPREADSHEET_ID:              ${{ secrets.SPREADSHEET_ID }}
+          SHEET_NAME:                  ${{ secrets.SHEET_NAME }}
+          GOOGLE_CREDS_JSON:           ${{ secrets.GOOGLE_CREDS_JSON }}
+          CONTA_AZUL_CLIENT_ID:        ${{ secrets.CONTA_AZUL_CLIENT_ID }}
+          CONTA_AZUL_CLIENT_SECRET:    ${{ secrets.CONTA_AZUL_CLIENT_SECRET }}
+          CONTA_FINANCEIRA_RECEBER_ID: ${{ secrets.CONTA_FINANCEIRA_RECEBER_ID }}
+          CONTA_FINANCEIRA_PAGAR_ID:   ${{ secrets.CONTA_FINANCEIRA_PAGAR_ID }}
+          CATEGORIA_RECEBER_ID:        ${{ secrets.CATEGORIA_RECEBER_ID }}
+          CATEGORIA_PAGAR_ID:          ${{ secrets.CATEGORIA_PAGAR_ID }}
+        run: python main.py
+
+      - name: Atualizar secret CONTA_AZUL_TOKENS (refresh token pode ter mudado)
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          REPO:     ${{ github.repository }}
+        run: |
+          python - <<'EOF'
+          import os, base64, json, requests
+          from nacl import encoding, public
+
+          if not os.path.exists("tokens.json"):
+              print("tokens.json não encontrado, pulando atualização.")
+              exit(0)
+
+          with open("tokens.json") as f:
+              tokens = f.read()
+
+          GH_TOKEN = os.environ["GH_TOKEN"]
+          REPO     = os.environ["REPO"]
+          headers  = {
+              "Authorization": f"Bearer {GH_TOKEN}",
+              "Accept":        "application/vnd.github+json",
+          }
+
+          pub = requests.get(
+              f"https://api.github.com/repos/{REPO}/actions/secrets/public-key",
+              headers=headers
+          ).json()
+
+          pk        = public.PublicKey(pub["key"].encode(), encoding.Base64Encoder())
+          encrypted = base64.b64encode(public.SealedBox(pk).encrypt(tokens.encode())).decode()
+
+          r = requests.put(
+              f"https://api.github.com/repos/{REPO}/actions/secrets/CONTA_AZUL_TOKENS",
+              headers=headers,
+              json={"encrypted_value": encrypted, "key_id": pub["key_id"]}
+          )
+          r.raise_for_status()
+          print("✅ Secret CONTA_AZUL_TOKENS atualizado com sucesso.")
+          EOF
