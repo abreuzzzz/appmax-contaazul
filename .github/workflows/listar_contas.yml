@@ -1,0 +1,58 @@
+name: 🔍 Listar Contas Financeiras
+
+on:
+  workflow_dispatch:
+
+jobs:
+  listar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Instalar dependências
+        run: pip install requests
+
+      - name: Restaurar tokens.json
+        run: echo '${{ secrets.CONTA_AZUL_TOKENS }}' > tokens.json
+
+      - name: Listar contas financeiras
+        env:
+          CONTA_AZUL_CLIENT_ID:     ${{ secrets.CONTA_AZUL_CLIENT_ID }}
+          CONTA_AZUL_CLIENT_SECRET: ${{ secrets.CONTA_AZUL_CLIENT_SECRET }}
+        run: |
+          python - <<'EOF'
+          import json, base64, time, requests
+
+          # Carrega tokens
+          with open("tokens.json") as f:
+              tokens = json.load(f)
+
+          access_token = tokens["access_token"]
+
+          # Se expirado, renova
+          if time.time() >= tokens["expires_at"] - 300:
+              CLIENT_ID     = os.environ["CONTA_AZUL_CLIENT_ID"]
+              CLIENT_SECRET = os.environ["CONTA_AZUL_CLIENT_SECRET"]
+              b64 = base64.b64encode(f"{CLIENT_ID}:{CLIENT_SECRET}".encode()).decode()
+              resp = requests.post(
+                  "https://auth.contaazul.com/oauth2/token",
+                  headers={"Authorization": f"Basic {b64}", "Content-Type": "application/x-www-form-urlencoded"},
+                  data={"grant_type": "refresh_token", "refresh_token": tokens["refresh_token"]},
+              )
+              resp.raise_for_status()
+              access_token = resp.json()["access_token"]
+
+          # Lista contas financeiras
+          resp = requests.get(
+              "https://api-v2.contaazul.com/financeiro/v1/contas-financeiras",
+              headers={"Authorization": f"Bearer {access_token}"},
+          )
+          resp.raise_for_status()
+
+          contas = resp.json().get("items", resp.json())
+          print("\n===== CONTAS FINANCEIRAS =====")
+          for c in contas:
+              print(f"\nNome:  {c.get('nome') or c.get('name')}")
+              print(f"ID:    {c.get('id')}")
+              print(f"Tipo:  {c.get('tipo') or c.get('type')}")
+              print(f"Ativo: {c.get('ativo') or c.get('active')}")
+          print("\n==============================")
+          EOF
