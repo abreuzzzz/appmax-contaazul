@@ -25,7 +25,7 @@ jobs:
       - name: Gerar URL de autorização (leia aqui!)
         env:
           CLIENT_ID:    ${{ secrets.CONTA_AZUL_CLIENT_ID }}
-          REDIRECT_URI: "https://localhost/callback"
+          REDIRECT_URI: "https://contaazul.com"
         run: |
           python - <<'EOF'
           import os, urllib.parse
@@ -50,7 +50,7 @@ jobs:
           CLIENT_ID:              ${{ secrets.CONTA_AZUL_CLIENT_ID }}
           CLIENT_SECRET:          ${{ secrets.CONTA_AZUL_CLIENT_SECRET }}
           AUTHORIZATION_CODE:     ${{ github.event.inputs.authorization_code }}
-          REDIRECT_URI:           "https://localhost/callback"
+          REDIRECT_URI:           "https://contaazul.com"
           GH_TOKEN:               ${{ secrets.GH_PAT }}
           REPO:                   ${{ github.repository }}
         run: |
