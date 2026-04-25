@@ -19,15 +19,13 @@ jobs:
           CONTA_AZUL_CLIENT_SECRET: ${{ secrets.CONTA_AZUL_CLIENT_SECRET }}
         run: |
           python - <<'EOF'
-          import json, base64, time, requests
+          import json, base64, time, requests, os
 
-          # Carrega tokens
           with open("tokens.json") as f:
               tokens = json.load(f)
 
           access_token = tokens["access_token"]
 
-          # Se expirado, renova
           if time.time() >= tokens["expires_at"] - 300:
               CLIENT_ID     = os.environ["CONTA_AZUL_CLIENT_ID"]
               CLIENT_SECRET = os.environ["CONTA_AZUL_CLIENT_SECRET"]
@@ -40,19 +38,21 @@ jobs:
               resp.raise_for_status()
               access_token = resp.json()["access_token"]
 
-          # Lista contas financeiras
           resp = requests.get(
-              "https://api-v2.contaazul.com/financeiro/v1/contas-financeiras",
+              "https://api-v2.contaazul.com/v1/financeiro/contas-financeiras",
               headers={"Authorization": f"Bearer {access_token}"},
           )
-          resp.raise_for_status()
+          print(f"Status: {resp.status_code}")
+          print(f"Resposta: {resp.text}")
 
-          contas = resp.json().get("items", resp.json())
+          data = resp.json()
+          contas = data.get("itens", data.get("items", [data] if "id" in data else []))
+
           print("\n===== CONTAS FINANCEIRAS =====")
           for c in contas:
               print(f"\nNome:  {c.get('nome') or c.get('name')}")
               print(f"ID:    {c.get('id')}")
               print(f"Tipo:  {c.get('tipo') or c.get('type')}")
-              print(f"Ativo: {c.get('ativo') or c.get('active')}")
+              print(f"Ativo: {c.get('ativo') or c.get('ativa') or c.get('active')}")
           print("\n==============================")
           EOF
