@@ -38,21 +38,19 @@ jobs:
               resp.raise_for_status()
               access_token = resp.json()["access_token"]
 
-          resp = requests.get(
+          urls_testar = [
+              "https://api-v2.contaazul.com/v1/financeiro/contas-financeiras",
               "https://api-v2.contaazul.com/financeiro/v1/contas-financeiras",
-              headers={"Authorization": f"Bearer {access_token}"},
-          )
-          print(f"Status: {resp.status_code}")
-          print(f"Resposta: {resp.text}")
+              "https://api-v2.contaazul.com/v1/contas-financeiras",
+              "https://api-v2.contaazul.com/v1/financeiro/saldos",
+          ]
 
-          data = resp.json()
-          contas = data.get("itens", data.get("items", [data] if "id" in data else []))
-
-          print("\n===== CONTAS FINANCEIRAS =====")
-          for c in contas:
-              print(f"\nNome:  {c.get('nome') or c.get('name')}")
-              print(f"ID:    {c.get('id')}")
-              print(f"Tipo:  {c.get('tipo') or c.get('type')}")
-              print(f"Ativo: {c.get('ativo') or c.get('ativa') or c.get('active')}")
-          print("\n==============================")
+          for url in urls_testar:
+              r = requests.get(url, headers={"Authorization": f"Bearer {access_token}"})
+              print(f"\n{url}")
+              print(f"Status: {r.status_code}")
+              if r.status_code == 200:
+                  print(f"✅ FUNCIONOU: {r.text[:500]}")
+              else:
+                  print(f"❌ {r.text[:200]}")
           EOF
