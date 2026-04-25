@@ -39,7 +39,7 @@ jobs:
               access_token = resp.json()["access_token"]
 
           resp = requests.get(
-              "https://api-v2.contaazul.com/v1/financeiro/contas-financeiras",
+              "https://api-v2.contaazul.com/financeiro/v1/contas-financeiras",
               headers={"Authorization": f"Bearer {access_token}"},
           )
           print(f"Status: {resp.status_code}")
