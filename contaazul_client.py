@@ -24,12 +24,11 @@ def _ja_existe_receber(titulo: str, data_comp: str) -> bool:
         params={
             "pagina": 1,
             "tamanho_pagina": 10,
-            "descricao": titulo,
+            "descricao":            titulo,
             "data_competencia_de":  data_comp,
             "data_competencia_ate": data_comp,
-            # vencimento obrigatório — usa range amplo
-            "data_vencimento_de":  "2020-01-01",
-            "data_vencimento_ate": "2099-12-31",
+            "data_vencimento_de":   "2020-01-01",
+            "data_vencimento_ate":  "2099-12-31",
         },
         timeout=15,
     )
@@ -43,11 +42,11 @@ def _ja_existe_pagar(titulo: str, data_comp: str) -> bool:
         params={
             "pagina": 1,
             "tamanho_pagina": 10,
-            "descricao": titulo,
+            "descricao":            titulo,
             "data_competencia_de":  data_comp,
             "data_competencia_ate": data_comp,
-            "data_vencimento_de":  "2020-01-01",
-            "data_vencimento_ate": "2099-12-31",
+            "data_vencimento_de":   "2020-01-01",
+            "data_vencimento_ate":  "2099-12-31",
         },
         timeout=15,
     )
@@ -65,42 +64,47 @@ def _agrupar(lancamentos: list) -> dict:
                 "titulo":           t,
                 "data_competencia": l["data_competencia"],
                 "valor_total":      0,
+                "taxa_total":       0,
                 "parcelas":         [],
             }
-        eventos[t]["valor_total"]      += l["valor_receber"]
+        eventos[t]["valor_total"] += l["valor_receber"]
+        eventos[t]["taxa_total"]  += l["valor_taxa"]
         eventos[t]["parcelas"].append(l)
     return eventos
 
 # ─── POST Contas a Receber ────────────────────────────────────────────────────
 
 def _post_receber(evento: dict):
-    parcelas_payload = []
-    for p in evento["parcelas"]:
-        parcela = {
-            "descricao":       f"{evento['titulo']} ({p['parcela']}/{p['total_parcelas']})",
-            "data_vencimento": p["data_vencimento"].strftime("%Y-%m-%d"),
-            "nota":            f"Lançamento automático Appmax",
-            "conta_financeira": CONTA_FINANCEIRA_RECEBER_ID,
-            "detalhe_valor": {
-                "valor_bruto": p["valor_receber"],
-            },
-        }
-        parcelas_payload.append(parcela)
+    valor_total = round(evento["valor_total"], 2)
 
     body = {
-        "data_competencia":  evento["data_competencia"].strftime("%Y-%m-%d"),
-        "valor":             round(evento["valor_total"], 2),
-        "descricao":         evento["titulo"],
-        "observacao":        "Lançamento automático via integração Appmax",
-        "conta_financeira":  CONTA_FINANCEIRA_RECEBER_ID,
+        "data_competencia": evento["data_competencia"].strftime("%Y-%m-%d"),
+        "valor":            valor_total,
+        "descricao":        evento["titulo"],
+        "observacao":       "Lançamento automático via integração Appmax",
+        "conta_financeira": CONTA_FINANCEIRA_RECEBER_ID,
+        "rateio": [
+            {
+                "id_categoria": CATEGORIA_RECEBER_ID,
+                "valor":        valor_total,
+            }
+        ],
         "condicao_pagamento": {
-            "parcelas": parcelas_payload,
+            "parcelas": [
+                {
+                    "descricao":        f"{evento['titulo']} ({p['parcela']}/{p['total_parcelas']})",
+                    "data_vencimento":  p["data_vencimento"].strftime("%Y-%m-%d"),
+                    "nota":             "Lançamento automático Appmax",
+                    "conta_financeira": CONTA_FINANCEIRA_RECEBER_ID,
+                    "detalhe_valor": {
+                        "valor_bruto":   round(p["valor_receber"], 2),
+                        "valor_liquido": round(p["valor_receber"], 2),
+                    },
+                }
+                for p in evento["parcelas"]
+            ]
         },
     }
-
-    # Categoria opcional
-    if CATEGORIA_RECEBER_ID:
-        body["rateio"] = [{"id_categoria": CATEGORIA_RECEBER_ID, "valor": round(evento["valor_total"], 2)}]
 
     resp = requests.post(
         f"{BASE}/contas-a-receber",
@@ -115,34 +119,36 @@ def _post_receber(evento: dict):
 
 def _post_pagar(evento: dict):
     titulo_taxa  = f"Taxa - {evento['titulo']}"
-    valor_total_taxa = sum(p["valor_taxa"] for p in evento["parcelas"])
-
-    parcelas_payload = []
-    for p in evento["parcelas"]:
-        parcela = {
-            "descricao":        f"{titulo_taxa} ({p['parcela']}/{p['total_parcelas']})",
-            "data_vencimento":  p["data_vencimento"].strftime("%Y-%m-%d"),
-            "nota":             "Taxa Appmax — lançamento automático",
-            "conta_financeira": CONTA_FINANCEIRA_PAGAR_ID,
-            "detalhe_valor": {
-                "valor_bruto": p["valor_taxa"],
-            },
-        }
-        parcelas_payload.append(parcela)
+    taxa_total   = round(evento["taxa_total"], 2)
 
     body = {
-        "data_competencia":  evento["data_competencia"].strftime("%Y-%m-%d"),
-        "valor":             round(valor_total_taxa, 2),
-        "descricao":         titulo_taxa,
-        "observacao":        "Taxa Appmax — lançamento automático",
-        "conta_financeira":  CONTA_FINANCEIRA_PAGAR_ID,
+        "data_competencia": evento["data_competencia"].strftime("%Y-%m-%d"),
+        "valor":            taxa_total,
+        "descricao":        titulo_taxa,
+        "observacao":       "Taxa Appmax — lançamento automático",
+        "conta_financeira": CONTA_FINANCEIRA_PAGAR_ID,
+        "rateio": [
+            {
+                "id_categoria": CATEGORIA_PAGAR_ID,
+                "valor":        taxa_total,
+            }
+        ],
         "condicao_pagamento": {
-            "parcelas": parcelas_payload,
+            "parcelas": [
+                {
+                    "descricao":        f"{titulo_taxa} ({p['parcela']}/{p['total_parcelas']})",
+                    "data_vencimento":  p["data_vencimento"].strftime("%Y-%m-%d"),
+                    "nota":             "Taxa Appmax — lançamento automático",
+                    "conta_financeira": CONTA_FINANCEIRA_PAGAR_ID,
+                    "detalhe_valor": {
+                        "valor_bruto":   round(p["valor_taxa"], 2),
+                        "valor_liquido": round(p["valor_taxa"], 2),
+                    },
+                }
+                for p in evento["parcelas"]
+            ]
         },
     }
-
-    if CATEGORIA_PAGAR_ID:
-        body["rateio"] = [{"id_categoria": CATEGORIA_PAGAR_ID, "valor": round(valor_total_taxa, 2)}]
 
     resp = requests.post(
         f"{BASE}/contas-a-pagar",
@@ -162,19 +168,16 @@ def lancar_no_conta_azul(lancamentos: list) -> dict:
     for titulo, evento in eventos.items():
         data_comp_str = evento["data_competencia"].strftime("%Y-%m-%d")
         try:
-            # Anti-duplicata receber
             if _ja_existe_receber(titulo, data_comp_str):
                 print(f"[SKIP] Já existe (receber): {titulo}")
                 resultado["ignorados"].append(titulo)
                 continue
 
-            # POST receber
             r = _post_receber(evento)
             print(f"[OK] Receber: {titulo} | protocolId={r.get('protocolId')} status={r.get('status')}")
 
-            # POST pagar (taxa)
-            total_taxa = sum(p["valor_taxa"] for p in evento["parcelas"])
-            if total_taxa > 0:
+            taxa_total = evento["taxa_total"]
+            if taxa_total > 0:
                 titulo_taxa = f"Taxa - {titulo}"
                 if not _ja_existe_pagar(titulo_taxa, data_comp_str):
                     rp = _post_pagar(evento)
