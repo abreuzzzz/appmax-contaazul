@@ -1,10 +1,10 @@
-name: 🔍 Descobrir Endpoints Conta Azul
+name: 🔍 Listar Contas Financeiras
 
 on:
   workflow_dispatch:
 
 jobs:
-  descobrir:
+  listar:
     runs-on: ubuntu-latest
     steps:
       - name: Instalar dependências
@@ -13,7 +13,7 @@ jobs:
       - name: Restaurar tokens.json
         run: echo '${{ secrets.CONTA_AZUL_TOKENS }}' > tokens.json
 
-      - name: Testar endpoints
+      - name: Listar contas financeiras
         env:
           CONTA_AZUL_CLIENT_ID:     ${{ secrets.CONTA_AZUL_CLIENT_ID }}
           CONTA_AZUL_CLIENT_SECRET: ${{ secrets.CONTA_AZUL_CLIENT_SECRET }}
@@ -38,32 +38,70 @@ jobs:
               r.raise_for_status()
               access_token = r.json()["access_token"]
 
-          headers_get = {"Authorization": f"Bearer {access_token}"}
-          headers_post = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+          h  = {"Authorization": f"Bearer {access_token}"}
+          hp = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
 
-          # 1. Testa GET /v1/categorias (exemplo da documentação oficial)
-          print("===== GET /v1/categorias (exemplo da doc) =====")
-          r = requests.get("https://api-v2.contaazul.com/v1/categorias", headers=headers_get)
-          print(f"Status: {r.status_code} | {r.text[:300]}")
+          # 1. Lista contas financeiras (endpoint correto da doc)
+          print("===== CONTAS FINANCEIRAS =====")
+          r = requests.get(
+              "https://api-v2.contaazul.com/v1/conta-financeira",
+              headers=h,
+              params={"pagina": 1, "tamanho_pagina": 50, "apenas_ativo": True}
+          )
+          print(f"Status: {r.status_code}")
+          if r.status_code == 200:
+              for c in r.json().get("itens", []):
+                  print(f"\n  Nome:  {c.get('nome')}")
+                  print(f"  ID:    {c.get('id')}")
+                  print(f"  Tipo:  {c.get('tipo')}")
+                  print(f"  Ativo: {c.get('ativo')}")
+          else:
+              print(r.text[:300])
 
-          # 2. Testa todos os paths possíveis de contas a receber
-          print("\n===== POST contas a receber =====")
-          payload = {
-              "descricao": "TESTE",
+          # 2. Testa POST contas a receber (endpoint correto da doc)
+          print("\n===== TESTE POST CONTAS A RECEBER =====")
+          payload_receber = {
               "data_competencia": "2026-03-30",
-              "parcelas": [{"descricao": "TESTE 1/1", "data_vencimento": "2026-04-30", "valor_bruto": 1.00}]
+              "valor": 1.00,
+              "descricao": "TESTE API - PODE DELETAR",
+              "observacao": "Teste de endpoint",
+              "conta_financeira": "00000000-0000-0000-0000-000000000000",
+              "condicao_pagamento": {
+                  "parcelas": [
+                      {
+                          "descricao": "TESTE API 1/1",
+                          "data_vencimento": "2026-04-30",
+                          "nota": "teste",
+                          "conta_financeira": "00000000-0000-0000-0000-000000000000",
+                          "detalhe_valor": {
+                              "valor_bruto": 1.00
+                          }
+                      }
+                  ]
+              }
           }
-          urls = [
-              "https://api-v2.contaazul.com/v1/financeiro/contas-receber",
-              "https://api-v2.contaazul.com/v1/contas-receber",
-              "https://api-v2.contaazul.com/v1/financeiro/eventos-financeiros/receber",
-              "https://api-v2.contaazul.com/v1/eventos-financeiros/contas-receber",
-              "https://api-v2.contaazul.com/v1/financeiro/receitas",
-          ]
-          for url in urls:
-              r = requests.post(url, headers=headers_post, json=payload)
-              flag = "✅" if r.status_code not in [404] else "❌"
-              print(f"{flag} [{r.status_code}] {url}")
-              if r.status_code != 404:
-                  print(f"    → {r.text[:300]}")
+          r = requests.post(
+              "https://api-v2.contaazul.com/v1/financeiro/eventos-financeiros/contas-a-receber",
+              headers=hp,
+              json=payload_receber
+          )
+          flag = "✅" if r.status_code in [200, 202] else "❌"
+          print(f"{flag} [{r.status_code}] POST contas-a-receber")
+          print(f"    → {r.text[:400]}")
+
+          # 3. Testa GET buscar contas a receber
+          print("\n===== TESTE GET BUSCAR CONTAS A RECEBER =====")
+          r = requests.get(
+              "https://api-v2.contaazul.com/v1/financeiro/eventos-financeiros/contas-a-receber/buscar",
+              headers=h,
+              params={
+                  "pagina": 1,
+                  "tamanho_pagina": 5,
+                  "data_vencimento_de": "2026-01-01",
+                  "data_vencimento_ate": "2026-12-31",
+              }
+          )
+          flag = "✅" if r.status_code == 200 else "❌"
+          print(f"{flag} [{r.status_code}] GET contas-a-receber/buscar")
+          print(f"    → {r.text[:400]}")
           EOF
