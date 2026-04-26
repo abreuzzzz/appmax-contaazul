@@ -38,52 +38,32 @@ jobs:
               r.raise_for_status()
               access_token = r.json()["access_token"]
 
-          headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+          headers_get = {"Authorization": f"Bearer {access_token}"}
+          headers_post = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
 
-          # Payload mínimo de teste
-          payload_receber = {
-              "descricao": "TESTE API",
+          # 1. Testa GET /v1/categorias (exemplo da documentação oficial)
+          print("===== GET /v1/categorias (exemplo da doc) =====")
+          r = requests.get("https://api-v2.contaazul.com/v1/categorias", headers=headers_get)
+          print(f"Status: {r.status_code} | {r.text[:300]}")
+
+          # 2. Testa todos os paths possíveis de contas a receber
+          print("\n===== POST contas a receber =====")
+          payload = {
+              "descricao": "TESTE",
               "data_competencia": "2026-03-30",
-              "parcelas": [
-                  {
-                      "descricao": "TESTE API 1/1",
-                      "data_vencimento": "2026-04-30",
-                      "valor_bruto": 1.00
-                  }
-              ]
+              "parcelas": [{"descricao": "TESTE 1/1", "data_vencimento": "2026-04-30", "valor_bruto": 1.00}]
           }
-
-          urls_post = [
-              "https://api-v2.contaazul.com/financeiro/v1/eventos/contas-receber",
-              "https://api-v2.contaazul.com/financeiro/v1/eventos-receber",
-              "https://api-v2.contaazul.com/financeiro/v1/lancamentos/receber",
-              "https://api-v2.contaazul.com/financeiro/v1/receber",
-              "https://api-v2.contaazul.com/v1/financeiro/eventos/contas-receber",
-              "https://api-v2.contaazul.com/financeiro/v1/contas-a-receber",
+          urls = [
+              "https://api-v2.contaazul.com/v1/financeiro/contas-receber",
+              "https://api-v2.contaazul.com/v1/contas-receber",
+              "https://api-v2.contaazul.com/v1/financeiro/eventos-financeiros/receber",
+              "https://api-v2.contaazul.com/v1/eventos-financeiros/contas-receber",
+              "https://api-v2.contaazul.com/v1/financeiro/receitas",
           ]
-
-          print("===== TESTANDO POST CONTAS A RECEBER =====")
-          for url in urls_post:
-              r = requests.post(url, headers=headers, json=payload_receber)
-              status = r.status_code
-              resposta = r.text[:150].replace('\n','')
-              flag = "✅" if status not in [404] else "❌"
-              print(f"{flag} [{status}] {url}")
-              if status not in [404]:
-                  print(f"    → {resposta}")
-
-          print("\n===== TESTANDO GET PARCELAS A RECEBER =====")
-          urls_get = [
-              "https://api-v2.contaazul.com/financeiro/v1/contas-receber/parcelas",
-              "https://api-v2.contaazul.com/financeiro/v1/parcelas/receber",
-              "https://api-v2.contaazul.com/financeiro/v1/receber/parcelas",
-              "https://api-v2.contaazul.com/v1/financeiro/contas-receber/parcelas",
-          ]
-          for url in urls_get:
-              r = requests.get(url, headers=headers, params={"tamanho_pagina": 1})
-              status = r.status_code
-              flag = "✅" if status == 200 else "❌"
-              print(f"{flag} [{status}] {url}")
-              if status == 200:
-                  print(f"    → {r.text[:200]}")
+          for url in urls:
+              r = requests.post(url, headers=headers_post, json=payload)
+              flag = "✅" if r.status_code not in [404] else "❌"
+              print(f"{flag} [{r.status_code}] {url}")
+              if r.status_code != 404:
+                  print(f"    → {r.text[:300]}")
           EOF
