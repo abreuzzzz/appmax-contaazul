@@ -1,12 +1,13 @@
 import requests
 from auth_contaazul import get_access_token
 from config import (
-    CONTA_AZUL_BASE_URL,
     CONTA_FINANCEIRA_RECEBER_ID,
     CONTA_FINANCEIRA_PAGAR_ID,
     CATEGORIA_RECEBER_ID,
     CATEGORIA_PAGAR_ID,
 )
+
+BASE = "https://api-v2.contaazul.com/v1/financeiro/eventos-financeiros"
 
 def _headers():
     return {
@@ -14,17 +15,48 @@ def _headers():
         "Content-Type":  "application/json",
     }
 
-def _ja_existe(endpoint, titulo):
+# ─── Anti-duplicata ───────────────────────────────────────────────────────────
+
+def _ja_existe_receber(titulo: str, data_comp: str) -> bool:
     resp = requests.get(
-        f"{CONTA_AZUL_BASE_URL}/{endpoint}/parcelas",
+        f"{BASE}/contas-a-receber/buscar",
         headers=_headers(),
-        params={"nome": titulo, "tamanho_pagina": 1},
+        params={
+            "pagina": 1,
+            "tamanho_pagina": 10,
+            "descricao": titulo,
+            "data_competencia_de":  data_comp,
+            "data_competencia_ate": data_comp,
+            # vencimento obrigatório — usa range amplo
+            "data_vencimento_de":  "2020-01-01",
+            "data_vencimento_ate": "2099-12-31",
+        },
         timeout=15,
     )
     resp.raise_for_status()
-    return len(resp.json().get("items", [])) > 0
+    return resp.json().get("itens_totais", 0) > 0
 
-def _agrupar(lancamentos):
+def _ja_existe_pagar(titulo: str, data_comp: str) -> bool:
+    resp = requests.get(
+        f"{BASE}/contas-a-pagar/buscar",
+        headers=_headers(),
+        params={
+            "pagina": 1,
+            "tamanho_pagina": 10,
+            "descricao": titulo,
+            "data_competencia_de":  data_comp,
+            "data_competencia_ate": data_comp,
+            "data_vencimento_de":  "2020-01-01",
+            "data_vencimento_ate": "2099-12-31",
+        },
+        timeout=15,
+    )
+    resp.raise_for_status()
+    return resp.json().get("itens_totais", 0) > 0
+
+# ─── Agrupamento por evento ───────────────────────────────────────────────────
+
+def _agrupar(lancamentos: list) -> dict:
     eventos = {}
     for l in lancamentos:
         t = l["titulo"]
@@ -32,85 +64,128 @@ def _agrupar(lancamentos):
             eventos[t] = {
                 "titulo":           t,
                 "data_competencia": l["data_competencia"],
+                "valor_total":      0,
                 "parcelas":         [],
             }
+        eventos[t]["valor_total"]      += l["valor_receber"]
         eventos[t]["parcelas"].append(l)
     return eventos
 
-def _post_receber(titulo, data_comp, parcelas):
+# ─── POST Contas a Receber ────────────────────────────────────────────────────
+
+def _post_receber(evento: dict):
+    parcelas_payload = []
+    for p in evento["parcelas"]:
+        parcela = {
+            "descricao":       f"{evento['titulo']} ({p['parcela']}/{p['total_parcelas']})",
+            "data_vencimento": p["data_vencimento"].strftime("%Y-%m-%d"),
+            "nota":            f"Lançamento automático Appmax",
+            "conta_financeira": CONTA_FINANCEIRA_RECEBER_ID,
+            "detalhe_valor": {
+                "valor_bruto": p["valor_receber"],
+            },
+        }
+        parcelas_payload.append(parcela)
+
     body = {
-        "descricao":        titulo,
-        "data_competencia": data_comp.strftime("%Y-%m-%d"),
-        "parcelas": [
-            {
-                "descricao":        f"{titulo} ({p['parcela']}/{p['total_parcelas']})",
-                "data_vencimento":  p["data_vencimento"].strftime("%Y-%m-%d"),
-                "valor_bruto":      p["valor_receber"],
-                **({"id_conta_financeira": CONTA_FINANCEIRA_RECEBER_ID}
-                   if CONTA_FINANCEIRA_RECEBER_ID else {}),
-            }
-            for p in parcelas
-        ],
-        **({"id_categoria": CATEGORIA_RECEBER_ID} if CATEGORIA_RECEBER_ID else {}),
+        "data_competencia":  evento["data_competencia"].strftime("%Y-%m-%d"),
+        "valor":             round(evento["valor_total"], 2),
+        "descricao":         evento["titulo"],
+        "observacao":        "Lançamento automático via integração Appmax",
+        "conta_financeira":  CONTA_FINANCEIRA_RECEBER_ID,
+        "condicao_pagamento": {
+            "parcelas": parcelas_payload,
+        },
     }
+
+    # Categoria opcional
+    if CATEGORIA_RECEBER_ID:
+        body["rateio"] = [{"id_categoria": CATEGORIA_RECEBER_ID, "valor": round(evento["valor_total"], 2)}]
+
     resp = requests.post(
-        f"{CONTA_AZUL_BASE_URL}/contas-receber",
-        headers=_headers(), json=body, timeout=15
+        f"{BASE}/contas-a-receber",
+        headers=_headers(),
+        json=body,
+        timeout=15,
     )
     resp.raise_for_status()
     return resp.json()
 
-def _post_pagar(titulo, data_comp, parcelas):
-    titulo_taxa = f"Taxa - {titulo}"
+# ─── POST Contas a Pagar ──────────────────────────────────────────────────────
+
+def _post_pagar(evento: dict):
+    titulo_taxa  = f"Taxa - {evento['titulo']}"
+    valor_total_taxa = sum(p["valor_taxa"] for p in evento["parcelas"])
+
+    parcelas_payload = []
+    for p in evento["parcelas"]:
+        parcela = {
+            "descricao":        f"{titulo_taxa} ({p['parcela']}/{p['total_parcelas']})",
+            "data_vencimento":  p["data_vencimento"].strftime("%Y-%m-%d"),
+            "nota":             "Taxa Appmax — lançamento automático",
+            "conta_financeira": CONTA_FINANCEIRA_PAGAR_ID,
+            "detalhe_valor": {
+                "valor_bruto": p["valor_taxa"],
+            },
+        }
+        parcelas_payload.append(parcela)
+
     body = {
-        "descricao":        titulo_taxa,
-        "data_competencia": data_comp.strftime("%Y-%m-%d"),
-        "parcelas": [
-            {
-                "descricao":        f"{titulo_taxa} ({p['parcela']}/{p['total_parcelas']})",
-                "data_vencimento":  p["data_vencimento"].strftime("%Y-%m-%d"),
-                "valor_bruto":      p["valor_taxa"],
-                **({"id_conta_financeira": CONTA_FINANCEIRA_PAGAR_ID}
-                   if CONTA_FINANCEIRA_PAGAR_ID else {}),
-            }
-            for p in parcelas
-        ],
-        **({"id_categoria": CATEGORIA_PAGAR_ID} if CATEGORIA_PAGAR_ID else {}),
+        "data_competencia":  evento["data_competencia"].strftime("%Y-%m-%d"),
+        "valor":             round(valor_total_taxa, 2),
+        "descricao":         titulo_taxa,
+        "observacao":        "Taxa Appmax — lançamento automático",
+        "conta_financeira":  CONTA_FINANCEIRA_PAGAR_ID,
+        "condicao_pagamento": {
+            "parcelas": parcelas_payload,
+        },
     }
+
+    if CATEGORIA_PAGAR_ID:
+        body["rateio"] = [{"id_categoria": CATEGORIA_PAGAR_ID, "valor": round(valor_total_taxa, 2)}]
+
     resp = requests.post(
-        f"{CONTA_AZUL_BASE_URL}/contas-pagar",
-        headers=_headers(), json=body, timeout=15
+        f"{BASE}/contas-a-pagar",
+        headers=_headers(),
+        json=body,
+        timeout=15,
     )
     resp.raise_for_status()
     return resp.json()
 
-def lancar_no_conta_azul(lancamentos):
-    eventos    = _agrupar(lancamentos)
-    resultado  = {"criados": [], "ignorados": [], "erros": []}
+# ─── Função principal ─────────────────────────────────────────────────────────
 
-    for titulo, ev in eventos.items():
+def lancar_no_conta_azul(lancamentos: list) -> dict:
+    eventos   = _agrupar(lancamentos)
+    resultado = {"criados": [], "ignorados": [], "erros": []}
+
+    for titulo, evento in eventos.items():
+        data_comp_str = evento["data_competencia"].strftime("%Y-%m-%d")
         try:
-            if _ja_existe("contas-receber", titulo):
-                print(f"[SKIP] Já existe: {titulo}")
+            # Anti-duplicata receber
+            if _ja_existe_receber(titulo, data_comp_str):
+                print(f"[SKIP] Já existe (receber): {titulo}")
                 resultado["ignorados"].append(titulo)
                 continue
 
-            r = _post_receber(titulo, ev["data_competencia"], ev["parcelas"])
-            print(f"[OK] Receber: {titulo} | id={r.get('id')}")
+            # POST receber
+            r = _post_receber(evento)
+            print(f"[OK] Receber: {titulo} | protocolId={r.get('protocolId')} status={r.get('status')}")
 
-            total_taxa = sum(p["valor_taxa"] for p in ev["parcelas"])
+            # POST pagar (taxa)
+            total_taxa = sum(p["valor_taxa"] for p in evento["parcelas"])
             if total_taxa > 0:
                 titulo_taxa = f"Taxa - {titulo}"
-                if not _ja_existe("contas-pagar", titulo_taxa):
-                    rp = _post_pagar(titulo, ev["data_competencia"], ev["parcelas"])
-                    print(f"[OK] Pagar: Taxa - {titulo} | id={rp.get('id')}")
+                if not _ja_existe_pagar(titulo_taxa, data_comp_str):
+                    rp = _post_pagar(evento)
+                    print(f"[OK] Pagar: {titulo_taxa} | protocolId={rp.get('protocolId')} status={rp.get('status')}")
                 else:
-                    print(f"[SKIP] Já existe (taxa): Taxa - {titulo}")
+                    print(f"[SKIP] Já existe (pagar): {titulo_taxa}")
 
             resultado["criados"].append(titulo)
 
         except requests.HTTPError as e:
-            msg = f"{titulo}: {e.response.status_code} - {e.response.text}"
+            msg = f"{titulo}: {e.response.status_code} - {e.response.text[:300]}"
             print(f"[ERRO] {msg}")
             resultado["erros"].append(msg)
 
