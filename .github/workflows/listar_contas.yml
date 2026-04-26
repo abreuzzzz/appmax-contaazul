@@ -13,7 +13,7 @@ jobs:
       - name: Restaurar tokens.json
         run: echo '${{ secrets.CONTA_AZUL_TOKENS }}' > tokens.json
 
-      - name: Listar contas financeiras
+      - name: Listar contas e categorias
         env:
           CONTA_AZUL_CLIENT_ID:     ${{ secrets.CONTA_AZUL_CLIENT_ID }}
           CONTA_AZUL_CLIENT_SECRET: ${{ secrets.CONTA_AZUL_CLIENT_SECRET }}
@@ -38,70 +38,37 @@ jobs:
               r.raise_for_status()
               access_token = r.json()["access_token"]
 
-          h  = {"Authorization": f"Bearer {access_token}"}
-          hp = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+          h = {"Authorization": f"Bearer {access_token}"}
 
-          # 1. Lista contas financeiras (endpoint correto da doc)
+          # 1. Contas financeiras
           print("===== CONTAS FINANCEIRAS =====")
           r = requests.get(
               "https://api-v2.contaazul.com/v1/conta-financeira",
               headers=h,
               params={"pagina": 1, "tamanho_pagina": 50, "apenas_ativo": True}
           )
-          print(f"Status: {r.status_code}")
-          if r.status_code == 200:
-              for c in r.json().get("itens", []):
-                  print(f"\n  Nome:  {c.get('nome')}")
-                  print(f"  ID:    {c.get('id')}")
-                  print(f"  Tipo:  {c.get('tipo')}")
-                  print(f"  Ativo: {c.get('ativo')}")
-          else:
-              print(r.text[:300])
+          for c in r.json().get("itens", []):
+              print(f"  [{c.get('tipo')}] {c.get('nome')} → ID: {c.get('id')}")
 
-          # 2. Testa POST contas a receber (endpoint correto da doc)
-          print("\n===== TESTE POST CONTAS A RECEBER =====")
-          payload_receber = {
-              "data_competencia": "2026-03-30",
-              "valor": 1.00,
-              "descricao": "TESTE API - PODE DELETAR",
-              "observacao": "Teste de endpoint",
-              "conta_financeira": "00000000-0000-0000-0000-000000000000",
-              "condicao_pagamento": {
-                  "parcelas": [
-                      {
-                          "descricao": "TESTE API 1/1",
-                          "data_vencimento": "2026-04-30",
-                          "nota": "teste",
-                          "conta_financeira": "00000000-0000-0000-0000-000000000000",
-                          "detalhe_valor": {
-                              "valor_bruto": 1.00
-                          }
-                      }
-                  ]
-              }
-          }
-          r = requests.post(
-              "https://api-v2.contaazul.com/v1/financeiro/eventos-financeiros/contas-a-receber",
-              headers=hp,
-              json=payload_receber
-          )
-          flag = "✅" if r.status_code in [200, 202] else "❌"
-          print(f"{flag} [{r.status_code}] POST contas-a-receber")
-          print(f"    → {r.text[:400]}")
-
-          # 3. Testa GET buscar contas a receber
-          print("\n===== TESTE GET BUSCAR CONTAS A RECEBER =====")
+          # 2. Categorias de RECEITA
+          print("\n===== CATEGORIAS DE RECEITA =====")
           r = requests.get(
-              "https://api-v2.contaazul.com/v1/financeiro/eventos-financeiros/contas-a-receber/buscar",
+              "https://api-v2.contaazul.com/v1/categorias",
               headers=h,
-              params={
-                  "pagina": 1,
-                  "tamanho_pagina": 5,
-                  "data_vencimento_de": "2026-01-01",
-                  "data_vencimento_ate": "2026-12-31",
-              }
+              params={"pagina": 1, "tamanho_pagina": 100, "tipo": "RECEITA",
+                      "apenas_filhos": True, "permite_apenas_filhos": True}
           )
-          flag = "✅" if r.status_code == 200 else "❌"
-          print(f"{flag} [{r.status_code}] GET contas-a-receber/buscar")
-          print(f"    → {r.text[:400]}")
+          for c in r.json().get("itens", []):
+              print(f"  {c.get('nome')} → ID: {c.get('id')}")
+
+          # 3. Categorias de DESPESA
+          print("\n===== CATEGORIAS DE DESPESA =====")
+          r = requests.get(
+              "https://api-v2.contaazul.com/v1/categorias",
+              headers=h,
+              params={"pagina": 1, "tamanho_pagina": 100, "tipo": "DESPESA",
+                      "apenas_filhos": True, "permite_apenas_filhos": True}
+          )
+          for c in r.json().get("itens", []):
+              print(f"  {c.get('nome')} → ID: {c.get('id')}")
           EOF
