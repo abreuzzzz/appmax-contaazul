@@ -1,9 +1,7 @@
-name: 🌙 Nightly - Appmax → Conta Azul
+name: 🚀 Appmax → Conta Azul
 
 on:
-  schedule:
-    - cron: '0 2 * * *'   # 02:00 UTC = 23:00 Brasília
-  workflow_dispatch:        # permite rodar manualmente a qualquer hora
+  workflow_dispatch:
 
 jobs:
   lancar:
@@ -36,7 +34,7 @@ jobs:
           CENTRO_CUSTO_PAGAR_ID:       ${{ secrets.CENTRO_CUSTO_PAGAR_ID }}
         run: python main.py
 
-      - name: Atualizar secret CONTA_AZUL_TOKENS (refresh token pode ter mudado)
+      - name: Atualizar secret CONTA_AZUL_TOKENS
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
