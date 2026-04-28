@@ -32,8 +32,8 @@ jobs:
           CONTA_FINANCEIRA_PAGAR_ID:   ${{ secrets.CONTA_FINANCEIRA_PAGAR_ID }}
           CATEGORIA_RECEBER_ID:        ${{ secrets.CATEGORIA_RECEBER_ID }}
           CATEGORIA_PAGAR_ID:          ${{ secrets.CATEGORIA_PAGAR_ID }}
-          CENTRO_CUSTO_RECEBER_ID: ${{ secrets.CENTRO_CUSTO_RECEBER_ID }}
-          CENTRO_CUSTO_PAGAR_ID:   ${{ secrets.CENTRO_CUSTO_PAGAR_ID }}
+          CENTRO_CUSTO_RECEBER_ID:     ${{ secrets.CENTRO_CUSTO_RECEBER_ID }}
+          CENTRO_CUSTO_PAGAR_ID:       ${{ secrets.CENTRO_CUSTO_PAGAR_ID }}
         run: python main.py
 
       - name: Atualizar secret CONTA_AZUL_TOKENS (refresh token pode ter mudado)
