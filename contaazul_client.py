@@ -5,6 +5,8 @@ from config import (
     CONTA_FINANCEIRA_PAGAR_ID,
     CATEGORIA_RECEBER_ID,
     CATEGORIA_PAGAR_ID,
+    CENTRO_CUSTO_RECEBER_ID,
+    CENTRO_CUSTO_PAGAR_ID,
 )
 
 BASE = "https://api-v2.contaazul.com/v1/financeiro/eventos-financeiros"
@@ -22,8 +24,8 @@ def _ja_existe_receber(titulo: str, data_comp: str) -> bool:
         f"{BASE}/contas-a-receber/buscar",
         headers=_headers(),
         params={
-            "pagina": 1,
-            "tamanho_pagina": 10,
+            "pagina":               1,
+            "tamanho_pagina":       10,
             "descricao":            titulo,
             "data_competencia_de":  data_comp,
             "data_competencia_ate": data_comp,
@@ -40,8 +42,8 @@ def _ja_existe_pagar(titulo: str, data_comp: str) -> bool:
         f"{BASE}/contas-a-pagar/buscar",
         headers=_headers(),
         params={
-            "pagina": 1,
-            "tamanho_pagina": 10,
+            "pagina":               1,
+            "tamanho_pagina":       10,
             "descricao":            titulo,
             "data_competencia_de":  data_comp,
             "data_competencia_ate": data_comp,
@@ -72,6 +74,16 @@ def _agrupar(lancamentos: list) -> dict:
         eventos[t]["parcelas"].append(l)
     return eventos
 
+# ─── Monta rateio com centro de custo opcional ────────────────────────────────
+
+def _montar_rateio(id_categoria: str, valor: float, id_centro_custo: str) -> list:
+    rateio = {"id_categoria": id_categoria, "valor": valor}
+    if id_centro_custo:
+        rateio["rateio_centro_custo"] = [
+            {"id_centro_custo": id_centro_custo, "valor": valor}
+        ]
+    return [rateio]
+
 # ─── POST Contas a Receber ────────────────────────────────────────────────────
 
 def _post_receber(evento: dict):
@@ -83,12 +95,7 @@ def _post_receber(evento: dict):
         "descricao":        evento["titulo"],
         "observacao":       "Lançamento automático via integração Appmax",
         "conta_financeira": CONTA_FINANCEIRA_RECEBER_ID,
-        "rateio": [
-            {
-                "id_categoria": CATEGORIA_RECEBER_ID,
-                "valor":        valor_total,
-            }
-        ],
+        "rateio":           _montar_rateio(CATEGORIA_RECEBER_ID, valor_total, CENTRO_CUSTO_RECEBER_ID),
         "condicao_pagamento": {
             "parcelas": [
                 {
@@ -118,8 +125,8 @@ def _post_receber(evento: dict):
 # ─── POST Contas a Pagar ──────────────────────────────────────────────────────
 
 def _post_pagar(evento: dict):
-    titulo_taxa  = f"Taxa - {evento['titulo']}"
-    taxa_total   = round(evento["taxa_total"], 2)
+    titulo_taxa = f"Taxa - {evento['titulo']}"
+    taxa_total  = round(evento["taxa_total"], 2)
 
     body = {
         "data_competencia": evento["data_competencia"].strftime("%Y-%m-%d"),
@@ -127,12 +134,7 @@ def _post_pagar(evento: dict):
         "descricao":        titulo_taxa,
         "observacao":       "Taxa Appmax — lançamento automático",
         "conta_financeira": CONTA_FINANCEIRA_PAGAR_ID,
-        "rateio": [
-            {
-                "id_categoria": CATEGORIA_PAGAR_ID,
-                "valor":        taxa_total,
-            }
-        ],
+        "rateio":           _montar_rateio(CATEGORIA_PAGAR_ID, taxa_total, CENTRO_CUSTO_PAGAR_ID),
         "condicao_pagamento": {
             "parcelas": [
                 {
@@ -176,8 +178,7 @@ def lancar_no_conta_azul(lancamentos: list) -> dict:
             r = _post_receber(evento)
             print(f"[OK] Receber: {titulo} | protocolId={r.get('protocolId')} status={r.get('status')}")
 
-            taxa_total = evento["taxa_total"]
-            if taxa_total > 0:
+            if evento["taxa_total"] > 0:
                 titulo_taxa = f"Taxa - {titulo}"
                 if not _ja_existe_pagar(titulo_taxa, data_comp_str):
                     rp = _post_pagar(evento)
