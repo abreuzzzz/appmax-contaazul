@@ -1,3 +1,4 @@
+import sys
 from sheets_reader import ler_e_consolidar
 from contaazul_client import lancar_no_conta_azul
 
@@ -16,9 +17,9 @@ def main():
         for e in resultado["erros"]:
             print(f"  - {e}")
 
-    # Sai com erro se houver falhas (GitHub Actions vai marcar o run como falho)
-    if resultado["erros"]:
-        raise SystemExit(1)
+    # Só falha o workflow se TUDO deu errado (zero criados E zero ignorados)
+    if resultado["erros"] and not resultado["criados"] and not resultado["ignorados"]:
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
