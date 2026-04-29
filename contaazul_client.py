@@ -1,3 +1,4 @@
+import time
 import requests
 from auth_contaazul import get_access_token
 from config import (
@@ -16,6 +17,19 @@ def _headers():
         "Authorization": f"Bearer {get_access_token()}",
         "Content-Type":  "application/json",
     }
+
+# ─── Retry para erros 5xx ─────────────────────────────────────────────────────
+
+def _post_com_retry(url: str, body: dict, tentativas: int = 3, espera: int = 5):
+    for i in range(tentativas):
+        resp = requests.post(url, headers=_headers(), json=body, timeout=15)
+        if resp.status_code < 500:
+            resp.raise_for_status()
+            return resp.json()
+        print(f"[AVISO] Tentativa {i+1}/{tentativas} falhou com {resp.status_code} — aguardando {espera}s...")
+        time.sleep(espera)
+    resp.raise_for_status()
+    return resp.json()
 
 # ─── Anti-duplicata ───────────────────────────────────────────────────────────
 
@@ -113,14 +127,7 @@ def _post_receber(evento: dict):
         },
     }
 
-    resp = requests.post(
-        f"{BASE}/contas-a-receber",
-        headers=_headers(),
-        json=body,
-        timeout=15,
-    )
-    resp.raise_for_status()
-    return resp.json()
+    return _post_com_retry(f"{BASE}/contas-a-receber", body)
 
 # ─── POST Contas a Pagar ──────────────────────────────────────────────────────
 
@@ -152,14 +159,7 @@ def _post_pagar(evento: dict):
         },
     }
 
-    resp = requests.post(
-        f"{BASE}/contas-a-pagar",
-        headers=_headers(),
-        json=body,
-        timeout=15,
-    )
-    resp.raise_for_status()
-    return resp.json()
+    return _post_com_retry(f"{BASE}/contas-a-pagar", body)
 
 # ─── Função principal ─────────────────────────────────────────────────────────
 
